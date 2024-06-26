@@ -195,6 +195,7 @@ class Data:
         # na: liquid sodium
         # + psi_ytchen: enthalpy-based Na properties 07.02.2024
         elif inp['type'] == 'na':
+            # Sodium two-phase properties should be added here
             ini = inp['ini']
             if ini ==0: # psi_ytchen: calculation based on h, vectorized in 20240312
                 h = inp['h']
