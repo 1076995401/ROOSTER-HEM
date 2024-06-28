@@ -252,7 +252,7 @@ class Fluid:
             dict['visf'] = pro['visf']
             dict['kf'] = pro['kf']
             dict['cpf'] = pro['cpf']
-            if self.type[i] == 'h2o':
+            if self.type[i] == 'h2o' or self.type[i] == 'na':
                 dict['ts']  = pro['ts']
                 dict['xe']  = pro['xe']
                 dict['hgl'] = pro['hgl']
@@ -263,6 +263,9 @@ class Fluid:
                 dict['miug']= pro['miug']
                 dict['cpg'] = pro['cpg'] 
                 dict['kg']  = pro['kg']
+                dict['cpl'] = pro['cpl'] 
+                dict['kl']  = pro['kl']
+ 
                 self.xe[i] = pro['xe']
                 # psi_ytchen: calculate alpha 
                 xe_np = np.array(pro['xe'])
@@ -355,7 +358,6 @@ class Fluid:
             dpfric_f = self.dpfric[f[0]][f[1]]/2.0
             # friction losses for to
             dpfric_t = self.dpfric[t[0]][t[1]]/2.0
-
             b[j] = - (rhogh_f + rhogh_t) - (dpfric_f + dpfric_t)
             # psi_ytchen: special treatment to freelevel cell to avoid weird pressure field
             if self.pipetype[f[0]] != 'freelevel' and self.pipetype[t[0]] != 'freelevel': 
@@ -465,7 +467,7 @@ class Fluid:
                     dictfld['cpf'] = self.prop[i]['cpf'][j]
                     tfluid = self.temp[i][j]
                     pcell  = self.p[i][j]
-                    if self.type[i] == 'h2o':
+                    if self.type[i] == 'h2o' or self.type[i] == 'na':
                         dictfld['ts']  = self.prop[i]['ts'][j]
                         dictfld['xe']  = self.prop[i]['xe'][j]
                         dictfld['hgl'] = self.prop[i]['hgl'][j]
@@ -476,6 +478,10 @@ class Fluid:
                         dictfld['miug']= self.prop[i]['miug'][j]
                         dictfld['cpg'] = self.prop[i]['cpg'][j]
                         dictfld['kg']  = self.prop[i]['kg'][j]
+                        dictfld['cpl'] = self.prop[i]['cpl'][j]
+                        dictfld['kl']  = self.prop[i]['kl'][j]
+                        
+                        
                     # check if there is a fuel rod cooled by the node
                     if 'fuelrod' in reactor.solve and (self.pipeid[i],j) in self.map_th:
                         # + psi_ytchen: boiling heat transfer model is added in this section
