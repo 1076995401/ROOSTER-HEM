@@ -182,17 +182,24 @@ class Fluid:
         n = self.njun + sum(self.pipennodes)
         B = [[0]*n for i in range(n)]
         for j in range(self.njun):
+            f_t = (self.pipeid[self.f[j][0]],self.pipeid[self.t[j][0]])
+
             B[j][j] = l_over_a[j] # dmdot/dt, psi_ytchen: l.h.s coefficient for Momentum Equation
 
             i = self.njun + self.indx.index(self.f[j])
             B[j][i] = -1 # -P_from, psi_ytchen: l.h.s coefficient for Momentum Equation
+            if f_t in reactor.control.input['junflowrate']['jun']:
+                B[j][i] = 0.0
             if self.pipetype[self.f[j][0]] != 'freelevel':
                 B[i][j] = -1 # -dmdot/dt_out, psi_ytchen: l.h.s coefficient for Pressure Equation
 
             i = self.njun + self.indx.index(self.t[j])
             B[j][i] = 1 # +P_to, psi_ytchen: l.h.s coefficients for Momentum Equation
+            if f_t in reactor.control.input['junflowrate']['jun']:
+                B[j][i] = 0.0
             if self.pipetype[self.t[j][0]] != 'freelevel':
                 B[i][j] = 1 # +dmdot/dt_in, psi_ytchen: l.h.s coefficient for Pressure Equation
+
         for i in range(sum(self.pipennodes)):
             if self.pipetype[self.indx[i][0]] == 'freelevel':
                 B[self.njun + i][self.njun + i] = 1 # P = +_freelevel, psi_ytchen: freelevel pressure boundary for Pressure Equation
@@ -385,6 +392,9 @@ class Fluid:
                 if f_t in reactor.control.input['junpumphead']['jun']:
                     indx = reactor.control.input['junpumphead']['jun'].index(f_t)
                     b[j] += reactor.control.signal[self.junpumphead['pumphead'][indx]]
+                if f_t in reactor.control.input['junflowrate']['jun']:
+                    b[j] = 0.0
+
 
         # for i in range(self.npipe):                  #psi_ytchen: dangerous memory leakage point
         #     for j in range(self.pipennodes[i]):      #psi_ytchen: dangerous memory leakage point

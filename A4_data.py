@@ -80,7 +80,6 @@ class Data:
                                     knp[ij] = kgs[i]
                                     cnp[ij] = cgs[i]
                         else:
-                            rnp[ij] = rls[i]*(1. - xnp[ij]) + rgs[i]*xnp[ij]
                             rnp[ij] = 1./(1./rls[i] + xnp[ij]*(1./rgs[i] - 1./rls[i]))
                             mnp[ij] = 1.0/( 1.0/mls[i] + xnp[ij]*(1.0/mgs[i] - 1.0/mls[i]) )
                             knp[ij] = kls[i]*(1. - xnp[ij]) + kgs[i]*xnp[ij]
@@ -144,31 +143,144 @@ class Data:
                 print('Lead-Bismuth Eutectic database done.')
                 
             if matdic['type'] == 'na':
+                # psi_ytchen: creat interpolation functions for sodium two-phase properties
                 print('Constructing Sodium database...')
-                t1  = 371.00
-                t2  = 2000.0
-                t3  = 2503.70
-                tnp1 = np.linspace(t1, t2, num = 100, endpoint = False)
-                hnp1 =-3.6577e5 + 1.6582e3*tnp1 - 4.2375e-1*tnp1**2 + 1.4847e-4*tnp1**3 + 2.9926e6/tnp1
-                tnp2 = np.linspace(t2, t3, num = 100, endpoint = True)
-                dhg  = ( 393.37*(1.0 - tnp2/t3) + 4398.6*(1.0 - tnp2/t3)**(0.29302) )*1000.0
-                hnp2 = 2128.4e3 + 864.96*tnp2 - 0.5*dhg
-                tnp = np.append(tnp1, tnp2)
-                hnp = np.append(hnp1, hnp2)
-                rnp = 219.0 + 275.32*(1.0 - tnp/t3) + 511.58*(1.0 - tnp/t3)**0.5
-                vnp = np.exp(-6.4406 - 0.3958*np.log(tnp) + 556.835/tnp)/rnp
-                cnp = 1658.2 - 0.84750*tnp + 4.4541e-04*tnp**2 - 2.9926e6/tnp**2
-                knp = 124.67 - 0.11381*tnp + 5.5226e-5*tnp**2 - 1.1842e-8*tnp**3
-                values = np.zeros([5, 200])
-                values[0,:] = tnp.copy()
-                values[1,:] = rnp.copy()
-                values[2,:] = vnp.copy()
-                values[3,:] = cnp.copy()
-                values[4,:] = knp.copy()
-                fh_na = interp1d(hnp, values)
-                self.fh_na = fh_na
-                ht_na = interp1d(tnp, hnp)
-                self.ht_na = ht_na
+                rcrit = 219.0  # psi_ytchen: critical density
+                t1  = 371.00   # psi_ytchen: melting temperature, also melting point
+                t2  = 2000.0   # psi_ytchen: medium temperature 
+                t3  = 2503.70  # psi_ytchen: maximum temperature, also critical temperature
+                pmin= 1.000e1  # psi_ytchen: minimum pressure
+                pmax= 25.00e6  # psi_ytchen: maximum pressure, also critical pressure
+                hmin= 210.0e3  # psi_ytchen: minimum enthalpy
+                hmax= 5800.e3  # psi_ytchen: maximum enthalpy
+                # psi_ytchen: generate temporary psat-tsat table
+                tsat_temp = np.linspace(t1, t3, num = 1000, endpoint = False) 
+                psat_temp = 1.0e6*np.exp(11.9463-12633.73/tsat_temp)/tsat_temp**(0.4672)
+                tsps_na = interp1d(psat_temp, tsat_temp,fill_value = 'extrapolate') #function
+                # psi_ytchen: generate temporary tl-hl table
+                hl_temp = np.zeros( len(tsat_temp) )
+                for i in range( len(tsat_temp) ):
+                   if tsat_temp[i] < t2:
+                      hl_temp[i] = -3.6577e5 + 1.6582e3*tsat_temp[i] - 4.2375e-1*tsat_temp[i]**2 + 1.4847e-4*tsat_temp[i]**3 + 2.9926e6/tsat_temp[i]
+                   else:
+                      hgl_temp = (393.37*(1.0 - tsat_temp[i]/t3) + 4398.6*(1.0 - tsat_temp[i]/t3)**(0.29302))*1000.0
+                      hl_temp[i] = 2128.4e3 + 864.96*tsat_temp[i] - 0.5*hgl_temp
+                tlhl_na = interp1d(hl_temp, tsat_temp, kind='linear',fill_value = 'extrapolate') #function
+
+
+                # psi_ytchen: generate temporary cpgs-tsat table
+                tsat_temp = np.array([  400.,   500.,   600.,   700.,   800.,   900.,  1000.,  1100.,  1200.,  1300.,  1400.,  1500.,  1600.,  1700.,  1800.,  1900.,  2000.,  2100.,  2200.,  2300.,  2400.,  2500.])
+                cpgs_temp = np.array([0.86e3, 1.58e3, 2.02e3, 2.26e3, 2.44e3, 2.56e3, 2.64e3, 2.66e3, 2.64e3, 2.58e3, 2.48e3, 2.35e3, 2.17e3, 2.05e3, 2.06e3, 2.10e3, 2.25e3, 2.52e3, 3.00e3, 4.02e3, 7.70e3,15.06e3])
+                cpgs_na = interp1d(tsat_temp, cpgs_temp, kind='linear',fill_value = 'extrapolate') #function
+                # psi_ytchen: generate temporary kgsat-tsat table
+                tsat_temp = np.array([   373.,   700.,   800.,   900.,  1000.,  1100.,  1200.,  1300.,  1400.,  1500.,  2503.7])
+                kgsat_temp= np.array([0.00687, 0.0323, 0.0378, 0.0423, 0.0455, 0.0473, 0.0485, 0.0493, 0.0497, 0.0501,  0.0520])
+                kgsat_na = interp1d(tsat_temp, kgsat_temp, kind='linear',fill_value = 'extrapolate') #function
+                #
+                tsat_temp = np.array([   400.,   500.,   600.,   700.,   800.,   900.,  1000.,  1100.,  1200.,  1300.,  1400.,  1500.,  1600.,  1700.,  1800.,  1900.,  2000.,  2100.,  2200.,  2300.,  2400.,  2500.])
+                apgs_temp = np.array([2.55e-3,2.33e-3,2.01e-3,1.85e-3,1.73e-3,1.64e-3,1.57e-3,1.50e-3,1.44e-3,1.38e-3,1.33e-3,1.26e-3,1.19e-3,1.15e-3,1.15e-3,1.19e-3,1.28e-3,1.44e-3,1.76e-3,2.46e-3,4.87e-3,3.74e-1])
+                apgs_na = interp1d(tsat_temp, apgs_temp, kind='linear',fill_value = 'extrapolate') #function
+
+
+                pnp  = np.linspace(pmin, pmax, num = 800, endpoint = False) # psi_ytchen: mesh points for pressure
+                hnp  = np.linspace(hmin, hmax, num = 800, endpoint = False) # psi_ytchen: mesh points for enthalpy
+                xnp  = np.zeros( len(pnp)*len(hnp) )
+                rnp  = np.zeros( len(pnp)*len(hnp) )
+                vnp  = np.zeros( len(pnp)*len(hnp) )
+                mnp  = np.zeros( len(pnp)*len(hnp) )
+                knp  = np.zeros( len(pnp)*len(hnp) )
+                cnp  = np.zeros( len(pnp)*len(hnp) )
+                tnp  = np.zeros( len(pnp)*len(hnp) )
+                px   = np.zeros( len(pnp)*len(hnp) )
+                hy   = np.zeros( len(pnp)*len(hnp) )
+                value= np.zeros([len(pnp)*len(hnp), 7] )
+ 
+                rls = np.zeros( len(pnp) ) # psi_ytchen:
+                rgs = np.zeros( len(pnp) ) # psi_ytchen:
+                mls = np.zeros( len(pnp) ) # psi_ytchen:
+                mgs = np.zeros( len(pnp) ) # psi_ytchen:
+                cls = np.zeros( len(pnp) ) # psi_ytchen:
+                cgs = np.zeros( len(pnp) ) # psi_ytchen:
+                kls = np.zeros( len(pnp) ) # psi_ytchen:
+                kgs = np.zeros( len(pnp) ) # psi_ytchen:
+                ts  = np.zeros( len(pnp) ) # psi_ytchen:
+                hgl = np.zeros( len(pnp) ) # psi_ytchen:
+                sgm = np.zeros( len(pnp) )
+                val1d = np.zeros( [11, len(pnp)] )
+
+                for i in range( len(pnp) ):
+                    ts[i]  = tsps_na( pnp[i] )      # psi_ytchen: get saturation temperature
+                    rls[i] = 219.0 + 275.32*(1.0 - ts[i]/t3) + 511.58*(1.0 - ts[i]/t3)**0.5            # psi_ytchen: IAEA_TECDOC_NAPRO, page 184, eq.47
+                    gama   = (12633.73/ts[i]**(2.0)-0.4672/ts[i])*pnp[i]                               # psi_ytchen: IAEA_TECDOC_NAPRO, page 103, eq.13
+                    hgl[i] = (393.37*(1.0 - ts[i]/t3) + 4398.6*(1.0 - ts[i]/t3)**(0.29302))*1000.0     # psi_ytchen: IAEA_TECDOC_NAPRO, page 110, eq.14
+                    rgs[i] = (hgl[i]/ts[i]/gama + 1.0/rls[i])**(-1.0)                                  # psi_ytchen: IAEA_TECDOC_NAPRO, page 188, eq.48
+                    mls[i] = math.exp(-6.4406 - 0.3958*np.log(ts[i]) + 556.835/ts[i])                  # psi_ytchen: IAEA_TECDOC_NAPRO, page 395, eq.166
+                    miugd = 1.2375e-05 + 4.4828e-09*ts[i]                                              # psi_ytchen: IAEA_TECDOC_NAPRO, page 409, eq.173
+                    miugdc= 1.2375e-05 + 4.4828e-09*t3                                                 # psi_ytchen: IAEA_TECDOC_NAPRO, page 409, eq.173
+                    mgs[i] = miugd + (5.8e-05 - miugdc)*(ts[i]/t3)*(rgs[i]/rcrit)                      # psi_ytchen: IAEA_TECDOC_NAPRO, page 409, eq.172
+                    cls[i] = 1658.2 - 0.84750*ts[i] + 4.4541e-04*ts[i]**2 - 2.9926e6/ts[i]**2          # psi_ytchen: IAEA_TECDOC_NAPRO, page 270, eq.97
+                    cgs[i] = cpgs_na( ts[i] )                                                          # psi_ytchen: IAEA_TECDOC_NAPRO, page 315, tab. 246
+                    kls[i] = 124.67 - 0.11381*ts[i] + 5.5226e-5*ts[i]**2 - 1.1842e-8*ts[i]**3          # psi_ytchen: IAEA_TECDOC_NAPRO, page 346, eq.156
+                    kgs[i] = kgsat_na( ts[i] )                                                         # psi_ytchen: IAEA_TECDOC_NAPRO, page 360, tab. 269
+                    sgm[i] = 240.5e-3*( (t3-ts[i])/t3 )**(1.126)                                       # psi_ytchen: IAEA_TECDOC_NAPRO, page 133, eq. 21
+                    if ts[i] < t2:                                                                     # psi_ytchen: IAEA_TECDOC_NAPRO, page 270, eq.97
+                       hls = -3.6577e5 + 1.6582e3*ts[i] - 4.2375e-1*ts[i]**2 + 1.4847e-4*ts[i]**3 + 2.9926e6/ts[i]
+                    else:
+                       hls = 2128.4e3 + 864.96*ts[i] - 0.5*hgl[i]
+                    hgs = hls + hgl[i]
+                    for j in range( len(hnp)):
+                        ij = i*len(hnp) + j
+                        xnp[ij] = (hnp[j]-hls)/hgl[i]
+                        if xnp[ij] < 0.0: # psi_ytchen: subcooled liquid na
+                           tnp[ij] = tlhl_na(hnp[j]) # calculate liquid temperature with given h
+                           rnp[ij] = 219.0 + 275.32*(1.0 - tnp[ij]/t3) + 511.58*(1.0 - tnp[ij]/t3)**0.5
+                           mnp[ij] = math.exp(-6.4406 - 0.3958*np.log(tnp[ij]) + 556.835/tnp[ij])
+                           knp[ij] = 124.67 - 0.11381*tnp[ij] + 5.5226e-5*tnp[ij]**2 - 1.1842e-8*tnp[ij]**3
+                           cnp[ij] = 1658.2 - 0.84750*tnp[ij] + 4.4541e-04*tnp[ij]**2 - 2.9926e6/tnp[ij]**2
+                        elif xnp[ij] < 1.0: # psi_ytchen: saturated two-phase na
+                           tnp[ij] = ts[i]
+                           rnp[ij] = rgs[i]*rls[i]/(xnp[ij]*rls[i] + (1.-xnp[ij])*rgs[i])
+                           mnp[ij] = 1.0/( 1.0/mls[i] + xnp[ij]*(1.0/mgs[i] - 1.0/mls[i]) )
+                           knp[ij] = kls[i]*(1. - xnp[ij]) + kgs[i]*xnp[ij]
+                           cnp[ij] = cls[i]*(1. - xnp[ij]) + cgs[i]*xnp[ij]
+                        else: # psi_ytchen: superheated vapor na
+                           tnp[ij] = ts[i] + (hnp[j]-hgs)/cgs[i]
+                           rnp[ij] = rgs[i] - apgs_na(ts[i])*rgs[i]*(tnp[ij]-ts[i])
+                           miugd_ij = 1.2375e-05 + 4.4828e-09*tnp[ij]
+                           mnp[ij] = miugd_ij + (5.8e-05 - miugdc)*(tnp[ij]/t3)*(rnp[ij]/rcrit)
+                           knp[ij] = kgsat_na( tnp[ij] )
+                           cnp[ij] = cpgs_na( tnp[ij] )
+                        vnp[ij] = mnp[ij]/rnp[ij]
+                        px[ij] = pnp[i]
+                        hy[ij] = hnp[j]
+
+                value[:,0] = rnp.copy()
+                value[:,1] = vnp.copy()
+                value[:,2] = mnp.copy()
+                value[:,3] = knp.copy()
+                value[:,4] = cnp.copy()
+                value[:,5] = tnp.copy()
+                value[:,6] = xnp.copy()
+                fph_na = LinearNDInterpolator(list( zip(px, hy) ), value)
+                self.fph_na = fph_na
+                hpt_na = LinearNDInterpolator(list( zip(px, tnp) ), hy)
+                self.hpt_na = hpt_na
+
+                val1d[0 , :] = hgl
+                val1d[1 , :] = mls
+                val1d[2 , :] = mgs
+                val1d[3 , :] = rls
+                val1d[4 , :] = rgs
+                val1d[5 , :] = kls
+                val1d[6 , :] = kgs
+                val1d[7 , :] = ts 
+                val1d[8 , :] = cls
+                val1d[9 , :] = cgs
+                val1d[10, :] = sgm
+
+                fp_na = interp1d(pnp, val1d)
+                self.fp_na = fp_na
+
                 print('Sodium database done.')
                 
     #----------------------------------------------------------------------------------------------
@@ -198,21 +310,99 @@ class Data:
             # Sodium two-phase properties should be added here
             ini = inp['ini']
             if ini ==0: # psi_ytchen: calculation based on h, vectorized in 20240312
+            # psi_ytchen: calculation based on h
                 h = inp['h']
+                p = inp['p']
                 hnp = np.array(h)
-                value = self.fh_na(hnp)
-                tf   = value[0,:]
-                rhof = value[1,:]
-                visf = value[2,:]
-                cpf  = value[3,:]
-                kf   = value[4,:]
-                return {'tf':tf, 'rhof':rhof, 'visf':visf, 'cpf':cpf, 'kf':kf}
+                pnp = np.array(p)
+                value = self.fph_na( (pnp, hnp) )
+                rhof =  value[ : ,0]
+                visf =  value[ : ,1]
+                miuf =  value[ : ,2]
+                kf   =  value[ : ,3]
+                cpf  =  value[ : ,4]
+                tf   =  value[ : ,5]
+                xe   =  value[ : ,6]
+                
+                
+                val1d = self.fp_na( pnp )
+                hgl = val1d[0 , :]
+                mls = val1d[1 , :]
+                mgs = val1d[2 , :]
+                rls = val1d[3 , :]
+                rgs = val1d[4 , :]
+                kls = val1d[5 , :]
+                kgs = val1d[6 , :]
+                ts  = val1d[7 , :]
+                cls = val1d[8 , :]
+                cgs = val1d[9 , :]
+                sgm = val1d[10, :]
+                
+                if np.max(xe) < 0. :
+                    rhol = rhof.copy()
+                    miul = miuf.copy()
+                    kl   = kf.copy()
+                    cpl  = cpf.copy()
+                    rhog = rgs.copy()
+                    miug = mgs.copy()
+                    kg   = kgs.copy()
+                    cpg  = cgs.copy()
+                elif np.min(xe) > 1. :
+                    rhol = rls.copy()
+                    miul = mls.copy()
+                    kl   = kls.copy()
+                    cpl  = cls.copy()
+                    rhog = rhof.copy()
+                    miug = miuf.copy()
+                    kg   = kf.copy()
+                    cpg  = cpf.copy()
+                else:
+                    rhol = np.zeros( len(xe) )
+                    rhog = np.zeros( len(xe) )
+                    miul = np.zeros( len(xe) )
+                    miug = np.zeros( len(xe) )
+                    kl   = np.zeros( len(xe) )
+                    kg   = np.zeros( len(xe) )
+                    cpl  = np.zeros( len(xe) )
+                    cpg  = np.zeros( len(xe) )
+                    for i in range( len(xe) ):
+                        if xe[i] < 0.: 
+                            rhol[i] = rhof[i]
+                            rhog[i] = rgs[i]
+                            miul[i] = miuf[i] 
+                            miug[i] = mgs[i]
+                            kl[i]   = kf[i]
+                            kg[i]   = kgs[i]
+                            cpl[i]  = cpf[i]
+                            cpg[i]  = cgs[i]
+                        elif xe[i] > 1.: 
+                            rhog[i] = rhof[i]
+                            rhol[i] = rls[i]
+                            miug[i] = miuf[i]
+                            miul[i] = mls[i]
+                            kg[i]   = kf[i]
+                            kl[i]   = kls[i]
+                            cpg[i]  = cpf[i]
+                            cpl[i]  = cls[i]
+                        else:
+                            rhol[i] = rls[i]
+                            rhog[i] = rgs[i]
+                            miul[i] = mls[i]
+                            miug[i] = mgs[i]
+                            kl[i]   = kls[i]
+                            kg[i]   = kgs[i]
+                            cpl[i]  = cls[i]
+                            cpg[i]  = cgs[i]
+                return {'tf':tf,'rhol':rhol,'rhog':rhog,'rhof':rhof,'miul':miul,'miug':miug,'miuf':miuf,'visf':visf,\
+                'cpl':cpl,'cpg':cpg,'cpf':cpf,'kl':kl,'kg':kg,'kf':kf,'xe': xe,'ts':ts,'hgl':hgl,'sgm':sgm}
+
+
             elif ini > 0: # psi_ytchen: initialization run
             # psi_ytchen: calculation based on t
                 t = inp['t']
-                # psi_ytchen: International Atomic Energy Agency "Sodium Coolant Handbook: Physical and Chemical Properties", IAEA-TECDOC-XXXX, 2018
-                hl = self.ht_na(t)
-                return {'h':hl} 
+                p = inp['p']
+                hh = self.hpt_na(p,t)
+                return {'h':hh}
         # - psi_ytchen: enthalpy-based Na properties 07.02.2024
         # lbe: liquid lead and bismuth (55%wt Bi, 45%wt Pb)
         # + psi_ytchen: enthalpy-based LBE properties 07.02.2024
@@ -547,7 +737,95 @@ class Data:
               qflux = hSp*(Tw - Tf)
               HTCMOD = 8 # single-phase steam
 
-        elif material_type == 'na' or material_type == 'lbe' :
+        elif material_type == 'na'  :
+            pe = Re*Pr
+            Pmpa = PP/1.0e6
+            xe = inp['prop']['xe']
+            Ts = inp['prop']['ts']
+            if xe < 0.0:
+                
+                if 'p2d' in inp:
+                    # pin bundle geometry
+                    p2d = inp['p2d']
+                    # forced convection in a pin bundle (Mikityuk, NED 2008)
+                    nu = 0.047*(1.0-math.exp(-3.8*(p2d-1.0))) * ((pe)**0.77 + 250.0)
+                else:
+                    #round tube geometry
+                    nu = 4.8 + 0.025 * (pe)**0.8
+                hex = nu*kf/dh
+                qflux_SP = hex*(Tw - Tf)
+                # psi_ytchen: the fluid is subcooled liquid
+                if Tw < Ts:
+                    # psi_ytchen: single-phase heat transfer
+                    qflux = qflux_SP
+                else: # Tw >= Ts
+                    # Experimental study on boiling two-phase of liquid sodium along a 7-rod bundle – Part II: Heat transfer characteristics
+                    A = 4.80
+                    m = 0.70
+                    n = 0.15 # Yandong Hou
+                    qBoil = ( A*Pmpa**(n)*(Tw-Ts) )**( 1.0/(1.-m) )
+                    
+                    if qBoil < qflux_SP:
+                        qflux = qflux_SP
+                    else:
+                        qflux = qBoil
+                        HTCMOD = 1 # sodium subcooled boiling regime
+            elif xe <= 1.0:
+                miul= inp['prop']['miul']
+                kl  = inp['prop']['kl']
+                cpl = inp['prop']['cpl']
+                G = inp['Gtot']
+                rel = G*dh/miul
+                prl = cpl*miul/kl
+                pel = rel*prl
+                if 'p2d' in inp:
+                    # pin bundle geometry
+                    p2d = inp['p2d']
+                    # forced convection in a pin bundle (Mikityuk, NED 2008)
+                    nul = 0.047*(1.0-math.exp(-3.8*(p2d-1.0))) * ((pel)**0.77 + 250.0)
+                else:
+                    #round tube geometry
+                    nul = 4.8 + 0.025 * (pel)**0.8
+                hLiq = nul*kl/dh
+                qLiq = hLiq*(Tw - Ts)
+                A = 4.80
+                m = 0.70
+                n = 0.15 # Yandong Hou
+                qBoil = max( qLiq, ( A*Pmpa**(n)*(Tw-Ts) )**( 1.0/(1.-m) ) )
+                
+                xcr = 0.30
+                if xe <= xcr:
+                    qflux = qBoil
+                    HTCMOD = 2 # sodium saturated boiling regime
+                else:
+                    # Aurelia CHENU PhD Thesis
+                    rhol= inp['prop']['rhol']
+                    rhog= inp['prop']['rhog']
+                    kg  = inp['prop']['kg']
+                    cpg = inp['prop']['cpg']
+                    miug= inp['prop']['miug']
+ 
+                    acr = rhol*xcr/(rhol*xcr + rhog*(1.0-xcr)) # critical void fraction
+                    alpha = rhol*xe/(rhol*xe + rhog*(1.0-xe))  # void fraction
+                    a0 = 0.5
+                    b0 = 1.5
+                    Cfwl = ( (1.0-alpha)/(1.0-acr) )**(a0)*( (1.0-xe)/(1.0-xcr) )**(b0)
+                    
+                    reg = G*dh/miug
+                    Prg = miug*cpg/kg
+                    nug = 0.0230*reg**(0.80)*Prg**(0.40)*(Ts/Tw)**(0.50)
+                    hexg= nug*kg/dh
+                    qGas= hexg*(Tw - Ts)
+                    
+                    qflux  = qBoil*Cfwl + qGas*(1. - Cfwl)
+                    HTCMOD = 3 # sodium post dryout boiling regime
+            else: # single-phase sodium vapor
+                nu = 0.0230*Re**(0.80)*Pr**(0.40)*(Ts/Tw)**(0.50)
+                hex = nu*kf/dh
+                qflux = hex*(Tw - Tf)
+                HTCMOD = 4 # single-phase sodium vapor regime
+                
+        elif material_type == 'lbe' :
             pe = Re*Pr
             if 'p2d' in inp:
                 # pin bundle
