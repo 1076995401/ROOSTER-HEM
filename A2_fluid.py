@@ -47,6 +47,7 @@ class Fluid:
         self.pe = []
         self.Gf = [] # psi_ytchen: fluid total mass flux, kg/(m2*s)
         self.htcmod = [] # psi_ytchen: fluid heat transfer mode
+        self.xlm = [] # psi_ytchen: Lockhart-Martinelli
         
         # psi_ytchen: list for pressure drop calculation issues
         self.dpkne  = []
@@ -96,6 +97,8 @@ class Fluid:
             self.Gf.append([0]*self.pipennodes[i])
             # psi_ytchen: list of initial fluid total mass flux
             self.htcmod.append([0]*self.pipennodes[i])
+            # psi_ytchen: list of initial xlm number
+            self.xlm.append([1]*self.pipennodes[i])
             # psi_ytchen: list of fluid kinetic energy 
             self.dpkne.append([0]*self.pipennodes[i])
             # psi_ytchen: list of frictional pressure drop
@@ -272,6 +275,7 @@ class Fluid:
                 dict['kg']  = pro['kg']
                 dict['cpl'] = pro['cpl'] 
                 dict['kl']  = pro['kl']
+                dict['miuf']= pro['miuf']
  
                 self.xe[i] = pro['xe']
                 # psi_ytchen: calculate alpha 
@@ -325,18 +329,71 @@ class Fluid:
             rhonp = np.array(self.prop[i]['rhof'])
             
             dpkne = rhonp*velnp*np.abs(velnp)
+            dpgrav = 9.81*rhonp*self.len[i]*self.dir[i]/self.pipennodes[i]
+            
             if self.pipetype[i] == 'wirewrapped':
                 p2d = reactor.control.input['pipe'][i]["p2d"]
                 h2d = reactor.control.input['pipe'][i]["h2d"]
-                inp = {'p2d':p2d,'h2d':h2d,'re':self.re[i]}
-            elif self.pipetype[i] == 'barerod':                # + psi_ytchen: bare rod bundle inputs 
+                sb2st=reactor.control.input['pipe'][i]["sb2st"]
+
+            elif self.pipetype[i] == 'barerod':
                 p2d = reactor.control.input['pipe'][i]["p2d"]
-                inp = {'p2d':p2d,'re':self.re[i]}              # - psi_ytchen: bare rod bundle inputs 
+
             else:
-                inp = {'re':self.re[i]}
-            fricnp = reactor.data.fricfac(inp)
-            dpfric = fricnp*0.5*dpkne*self.len[i]/self.pipennodes[i]/self.dhyd[i]
-            dpgrav = 9.81*rhonp*self.len[i]*self.dir[i]/self.pipennodes[i]
+                continue
+ 
+            if self.type[i] != 'na':
+                if self.pipetype[i] == 'wirewrapped':
+                    inp = {'p2d':p2d,'h2d':h2d,'re':self.re[i],'sb2st':sb2st}
+                elif self.pipetype[i] == 'barerod':                # + psi_ytchen: bare rod bundle inputs 
+                    p2d = reactor.control.input['pipe'][i]["p2d"]
+                    inp = {'p2d':p2d,'re':self.re[i]}              # - psi_ytchen: bare rod bundle inputs 
+                else:
+                    inp = {'re':self.re[i]}
+                fricnp = reactor.data.fricfac(inp)
+                dpfric = fricnp*0.5*dpkne*self.len[i]/self.pipennodes[i]/self.dhyd[i]
+            else: # sodium flow condition
+                dpfric = []
+                for j in range(self.pipennodes[i]):
+                    if self.xe[i][j] < 1.0 and self.xe[i][j] > 0.0: # two-phase sodium cell
+                        miul= self.prop[i]['miul'][j]
+                        miug= self.prop[i]['miug'][j]
+                        miuf= self.prop[i]['miuf'][j]
+                        xe  = self.xe[i][j]
+                        rel = renp[j]*miuf/miul
+                        #reg = renp[j]*np.array(self.prop[i]['miuf'][j])/np.array(self.prop[i]['miug'][j])
+                        rhol= self.prop[i]['rhol'][j]
+                        rhog= self.prop[i]['rhog'][j]
+
+                        if self.pipetype[i] == 'wirewrapped':
+                            inp = {'p2d':p2d,'h2d':h2d,'re':rel,'sb2st':sb2st}
+                            #inpg= {'p2d':p2d,'h2d':h2d,'re':reg,'sb2st':sb2st}
+                        elif self.pipetype[i] == 'barerod':                # + psi_ytchen: bare rod bundle inputs
+                            inp = {'p2d':p2d,'re':rel}              # - psi_ytchen: bare rod bundle inputs
+                            #inpg= {'p2d':p2d,'re':reg}              
+                        else:
+                            inp = {'re':rel}
+                            #inpg= {'re':reg}
+                        fricl = reactor.data.fricfac(inp)
+                        #fricg= reactor.data.fricfac(inpg)
+                        #XLM= (1.0/self.xe[i][j] - 1.0)**(0.9)*(rhog/rhol)**(0.5)*(miul/miug)**(0.1)
+                        GG = rhonp[j]*velnp[j]
+                        #FL2 = 1. + 15.93/XLM + 1./XLM**(2.0) # Yandong HOU correlation
+                        FL2 = ( 1. + 4.*xe*(1.-xe) )*( xe*rhol/rhog + 1. - xe )
+                        dpf_temp = FL2*fricl*self.len[i]/self.pipennodes[i]/self.dhyd[i]*GG*abs(GG)/(2.0*rhol)
+                        #dpf_g = fricg*self.len[i]/self.pipennodes[i]/self.dhyd[i]*GG*abs(GG)/(2.0*rhog)
+                        #dpf_temp = min(dpf_temp, dpf_g)
+                        #self.xlm[i][j] = XLM # record the Lockhart-Martinelli number
+                    else:  # single-phase sodium cell
+                        if self.pipetype[i] == 'wirewrapped':
+                            inp = {'p2d':p2d,'h2d':h2d,'re':self.re[i][j],'sb2st':sb2st}
+                        elif self.pipetype[i] == 'barerod':                # + psi_ytchen: bare rod bundle inputs
+                            inp = {'p2d':p2d,'re':self.re[i][j]}              # - psi_ytchen: bare rod bundle inputs
+                        else:
+                            inp = {'re':self.re[i][j]}
+                        fric = reactor.data.fricfac(inp)
+                        dpf_temp = fric*0.5*dpkne[j]*self.len[i]/self.pipennodes[i]/self.dhyd[i]
+                    dpfric.append(dpf_temp)
             self.dpkne[i]  = list(dpkne)
             self.dpfric[i] = list(dpfric)
             self.dpgrav[i] = list(dpgrav)
@@ -368,7 +425,7 @@ class Fluid:
             b[j] = - (rhogh_f + rhogh_t) - (dpfric_f + dpfric_t)
             # psi_ytchen: special treatment to freelevel cell to avoid weird pressure field
             if self.pipetype[f[0]] != 'freelevel' and self.pipetype[t[0]] != 'freelevel': 
-                b[j] += dpkne_f - dpkne_t # psi_ytchen: accleration pressure drop
+                continue #b[j] += dpkne_f - dpkne_t # psi_ytchen: accleration pressure drop
             try:
                 # check if the current junction j is present in junkfac list
                 indx = reactor.fluid.junkfac['jun'].index((self.pipeid[f[0]],self.pipeid[t[0]]))

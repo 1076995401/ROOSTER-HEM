@@ -278,7 +278,7 @@ class Data:
                 val1d[9 , :] = cgs
                 val1d[10, :] = sgm
 
-                fp_na = interp1d(pnp, val1d)
+                fp_na = interp1d(pnp, val1d, kind='linear',fill_value = 'extrapolate')
                 self.fp_na = fp_na
 
                 print('Sodium database done.')
@@ -311,10 +311,19 @@ class Data:
             ini = inp['ini']
             if ini ==0: # psi_ytchen: calculation based on h, vectorized in 20240312
             # psi_ytchen: calculation based on h
+                pmin= 1.000e1
+                pmax= 25.00e6
+                hmin= 210.0e3
+                hmax= 5800.e3
                 h = inp['h']
                 p = inp['p']
                 hnp = np.array(h)
                 pnp = np.array(p)
+                hnp[hnp < hmin] = hmin+1.0
+                hnp[hnp > hmax] = hmax-1.0
+                pnp[hnp < pmin] = pmin+1.0
+                pnp[hnp > pmax] = pmax-1.0
+                
                 value = self.fph_na( (pnp, hnp) )
                 rhof =  value[ : ,0]
                 visf =  value[ : ,1]
@@ -531,6 +540,17 @@ class Data:
             rho = 7954.
             # specific heat (J/kg-K): Leibowitz, et al, "Properties for LMFBR safety analysis", ANL-CEN-RSD-76-1 (1976), p.100. Note that 1 mol of SS316 = 10.165 kg (https://www.webqc.org/molecular-weight-of-SS316.html) and 1 cal = 4.184 J
             cp = (6.181 + 1.788e-3*t)*10.165*4.184
+            # thermal conductivity (W/m-K): Leibowitz, et al, "Properties for LMFBR safety analysis", ANL-CEN-RSD-76-1 (1976), p.100.
+            k = 9.248 + 1.571e-2*t
+            return {'rho':rho, 'cp':cp, 'k':k}
+            
+            
+        elif inp['type'] == 'AISI316L':
+            t = inp['t']
+            # density (kg/m3): @300K equation from Leibowitz, et al, "Properties for LMFBR safety analysis", ANL-CEN-RSD-76-1 (1976), p.117
+            rho = 7954.
+            # specific heat (J/kg-K): Leibowitz, et al, "Properties for LMFBR safety analysis", ANL-CEN-RSD-76-1 (1976), p.100. Note that 1 mol of SS316 = 10.165 kg (https://www.webqc.org/molecular-weight-of-SS316.html) and 1 cal = 4.184 J
+            cp = 600.
             # thermal conductivity (W/m-K): Leibowitz, et al, "Properties for LMFBR safety analysis", ANL-CEN-RSD-76-1 (1976), p.100.
             k = 9.248 + 1.571e-2*t
             return {'rho':rho, 'cp':cp, 'k':k}
@@ -774,7 +794,13 @@ class Data:
                 miul= inp['prop']['miul']
                 kl  = inp['prop']['kl']
                 cpl = inp['prop']['cpl']
+                rhol= inp['prop']['rhol']
+                rhog= inp['prop']['rhog']
+                kg  = inp['prop']['kg']
+                cpg = inp['prop']['cpg']
+                miug= inp['prop']['miug']
                 G = inp['Gtot']
+                
                 rel = G*dh/miul
                 prl = cpl*miul/kl
                 pel = rel*prl
@@ -791,34 +817,37 @@ class Data:
                 A = 4.80
                 m = 0.70
                 n = 0.15 # Yandong Hou
-                qBoil = max( qLiq, ( A*Pmpa**(n)*(Tw-Ts) )**( 1.0/(1.-m) ) )
-                
-                xcr = 0.30
-                if xe <= xcr:
-                    qflux = qBoil
-                    HTCMOD = 2 # sodium saturated boiling regime
+                if Tw > Ts:
+                    qBoil = max( qLiq, ( A*Pmpa**(n)*(Tw-Ts) )**( 1.0/(1.-m) ) )
                 else:
-                    # Aurelia CHENU PhD Thesis
-                    rhol= inp['prop']['rhol']
-                    rhog= inp['prop']['rhog']
-                    kg  = inp['prop']['kg']
-                    cpg = inp['prop']['cpg']
-                    miug= inp['prop']['miug']
+                    qBoil = qLiq
  
-                    acr = rhol*xcr/(rhol*xcr + rhog*(1.0-xcr)) # critical void fraction
+                reg = G*dh/miug
+                Prg = miug*cpg/kg
+                nug = 0.0230*reg**(0.80)*Prg**(0.40)###*(Ts/Tw)**(0.50)
+                hexg= nug*kg/dh
+                qGas= hexg*(Tw - Ts)
+                
+                xcr = 0.300
+                acr1= 0.957 # critical void fraction const
+                acr2= rhol*xcr/(rhol*xcr + rhog*(1.0-xcr)) # critical void fraction by definition
+                
+                if xe <= xcr:
+                    
+                    qflux = qBoil
+                    Cfwlcr = ( (1.0-max(acr1,acr2))/(1.0-acr1) )**(0.5)
+                    qdrycr = Cfwlcr*qBoil + (1.0-Cfwlcr)*qGas
+                    phy = math.exp( xe/(xe - xcr) ) 
+                    qflux = qBoil*phy + qdrycr*(1.0-phy)
+                    HTCMOD = 2 # sodium saturated boiling regime
+                    
+                else: # xe > xcr
+                    # Aurelia CHENU PhD Thesis
                     alpha = rhol*xe/(rhol*xe + rhog*(1.0-xe))  # void fraction
-                    a0 = 0.5
-                    b0 = 1.5
-                    Cfwl = ( (1.0-alpha)/(1.0-acr) )**(a0)*( (1.0-xe)/(1.0-xcr) )**(b0)
-                    
-                    reg = G*dh/miug
-                    Prg = miug*cpg/kg
-                    nug = 0.0230*reg**(0.80)*Prg**(0.40)*(Ts/Tw)**(0.50)
-                    hexg= nug*kg/dh
-                    qGas= hexg*(Tw - Ts)
-                    
+                    Cfwl = ( (1.0-alpha)/(1.0-min(acr1,acr2)) )**(0.5)*( (1.0-xe)/(1.0-xcr) )**(1.5)
                     qflux  = qBoil*Cfwl + qGas*(1. - Cfwl)
                     HTCMOD = 3 # sodium post dryout boiling regime
+                    
             else: # single-phase sodium vapor
                 nu = 0.0230*Re**(0.80)*Pr**(0.40)*(Ts/Tw)**(0.50)
                 hex = nu*kf/dh
@@ -851,21 +880,26 @@ class Data:
             #in hexagonal wire-wrapped rod bundles." Nuclear Engineering and Design 335: 356-373.
             # psi_ytchen: for calculation of a single constant, 'math' is faster than 'numpy'
             p2d = inp['p2d']
-            
-            RebL = 320.0*(10**(p2d-1.0))
-            RebT = 10000.0*(10**(0.7*(p2d-1.0)))
-            
+ 
             re = np.array(inp['re'])
             re[re < 1.] = 1.
-            phi = np.log10(re/RebL)/math.log10(RebT/RebL)
+            
 
             if 'h2d' in inp:
-            # psi_ytchen: wire-wrapped rod bundle
+            # psi_ytchen: wire-wrapped rod bundle, use rehme 1973 model
                 h2d = inp['h2d']
-                CfbL = (-974.6 + 1612.0*p2d - 598.5*p2d**2)*math.pow(h2d, 0.06-0.085*p2d)
-                CfbT = (0.8063 - 0.9022*math.log10(h2d) + 0.3526*(math.log10(h2d)**2))*p2d**9.7*math.pow(h2d, 1.78-2.0*p2d)
+                d2h = 1.0/h2d
+                p2h = p2d*d2h
+                FF  = p2d**(0.5) + ( 7.6*(p2h-d2h)*p2h**(2.0) )**(2.16)
+                sb2st  = inp['sb2st'] # wetted perimeter ratio: (rod + wire)/(rod + wire + wall), influence of nrod
+                fric = ( FF**(0.5)*64.0/re + FF**(0.9335)*0.0816/re*(0.133) )*sb2st
+                return fric
             else: 
             # psi_ytchen: barerod bundle
+                RebL = 320.0*(10**(p2d-1.0))
+                RebT = 10000.0*(10**(0.7*(p2d-1.0)))
+                
+                phi = np.log10(re/RebL)/math.log10(RebT/RebL)
                 if 1.0 < p2d and p2d <= 1.1:
                     LL = [26.0000, 888.2, -3334.0]
                     TT = [0.09378, 1.398, -8.664]
@@ -877,17 +911,20 @@ class Data:
                     
                 CfbL = LL[0] + LL[1]*(p2d-1.) + LL[2]*(p2d-1.)**(2.0)
                 CfbT = TT[0] + TT[1]*(p2d-1.) + TT[2]*(p2d-1.)**(2.0)
-            if np.max(phi) < 0.0:
-                # psi_ytchen: pure laminar friction factor
-                return CfbL/re
-            elif np.min(phi) > 1.0:
-                # psi_ytchen: pure turbulent friction factor
-                return CfbT/re**0.18
-            else:
-                # psi_ytchen: transition friction factor
-                phi[phi < 0.] = 0.0
-                phi[phi > 1.] = 1.0
-                return CfbL/RebL*(1 - phi)**(1/3)*(1 - phi**7) + (CfbT/RebT**0.18)*phi**(1/3)
+                if np.max(phi) < 0.0:
+                    # psi_ytchen: pure laminar friction factor
+                    return CfbL/re
+                elif np.min(phi) > 1.0:
+                    # psi_ytchen: pure turbulent friction factor
+                    return CfbT/re**0.18
+                else:
+                    # psi_ytchen: transition friction factor
+                    try:
+                        phi[phi < 0.] = 0.0
+                        phi[phi > 1.] = 1.0
+                    except TypeError:
+                        phi = max( min(phi, 1.0), 0.0)
+                    return CfbL/RebL*(1 - phi)**(1/3)*(1 - phi**7) + (CfbT/RebT**0.18)*phi**(1/3)
         
         else: # psi_ytchen: changed to Churchill correlation to accelerate calculation 
             re = np.array(inp['re'])

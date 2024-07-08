@@ -514,6 +514,8 @@ class Control:
                          inp['mat'].append( {'id':word[1], 'type':word[2], 'p0':word[3], 'temp0':word[4]} )
                      elif word[2] == 'ss316':
                          inp['mat'].append( {'id':word[1], 'type':word[2], 'temp0':word[3]} )
+                     elif word[2] == 'AISI316L':
+                         inp['mat'].append( {'id':word[1], 'type':word[2], 'temp0':word[3]} )
                      elif word[2] == '9Cr1Mo':
                          inp['mat'].append( {'id':word[1], 'type':word[2], 'temp0':word[3]} )
                      elif word[2] == '2.25Cr1Mo':
@@ -561,7 +563,7 @@ class Control:
                 elif key == 'pipe-w':
                     inp['pipe'].append( {'id':word[1], 'type':'wirewrapped', 'matid':word[2], 'dhyd':word[3], 'len':word[4], \
                                          'dir':word[5], 'areaz':word[6], 'nnodes':int(word[7]), 'signaltemp':'', \
-                                            'p2d':word[8], 'h2d':word[9]} )
+                                            'p2d':word[8], 'h2d':word[9], 'sb2st':word[10]} )
                 elif key == 'pipe-b':
                     inp['pipe'].append( {'id':word[1], 'type':'barerod', 'matid':word[2], 'dhyd':word[3], 'len':word[4], \
                                          'dir':word[5], 'areaz':word[6], 'nnodes':int(word[7]), 'signaltemp':'','p2d':word[8]} )
@@ -753,6 +755,8 @@ class Control:
                 fid[-1].write(' ' + 'time(s)'.ljust(13) + ''.join([str(j).zfill(4).ljust(13) for j in range(reactor.fluid.pipennodes[i])]) + '\n')
                 fid.append(open(path4results + os.sep + 'fluid-htcmod-' + reactor.fluid.pipeid[i] + '.dat', 'w'))
                 fid[-1].write(' ' + 'time(s)'.ljust(13) + ''.join([str(j).zfill(4).ljust(13) for j in range(reactor.fluid.pipennodes[i])]) + '\n')
+                fid.append(open(path4results + os.sep + 'fluid-xlm-' + reactor.fluid.pipeid[i] + '.dat', 'w'))
+                fid[-1].write(' ' + 'time(s)'.ljust(13) + ''.join([str(j).zfill(4).ljust(13) for j in range(reactor.fluid.pipennodes[i])]) + '\n')
                 fid.append(open(path4results + os.sep + 'fluid-vel-' + reactor.fluid.pipeid[i] + '.dat', 'w'))
                 fid[-1].write(' ' + 'time(s)'.ljust(13) + ''.join([str(j).zfill(4).ljust(13) for j in range(reactor.fluid.pipennodes[i])]) + '\n')
                 fid.append(open(path4results + os.sep + 'fluid-re-' + reactor.fluid.pipeid[i] + '.dat', 'w'))
@@ -824,6 +828,8 @@ class Control:
                 fid[indx].write('{0:12.5e} '.format(time) + ''.join(['{0:12.5e} '.format(reactor.fluid.alpha[i][j]) for j in range(reactor.fluid.pipennodes[i])]) + '\n')
                 indx += 1
                 fid[indx].write('{0:12.5e} '.format(time) + ''.join(['{0:12.5e} '.format(reactor.fluid.htcmod[i][j]) for j in range(reactor.fluid.pipennodes[i])]) + '\n')
+                indx += 1
+                fid[indx].write('{0:12.5e} '.format(time) + ''.join(['{0:12.5e} '.format(reactor.fluid.xlm[i][j]) for j in range(reactor.fluid.pipennodes[i])]) + '\n')
                 indx += 1
                 fid[indx].write('{0:12.5e} '.format(time) + ''.join(['{0:12.5e} '.format(reactor.fluid.vel[i][j]) for j in range(reactor.fluid.pipennodes[i])]) + '\n')
                 indx += 1
